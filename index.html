@@ -67,7 +67,7 @@ th{background:var(--dark);color:#fff;font-weight:500}
 <script>
 /* ======================= CONFIG (edit here) ======================= */
 const CFG = {
-  // Supabase project URL and anon (public) key, from Project Settings > API.
+  // Supabase project URL (without /rest/v1) and anon (public) key, from Project Settings > API.
   // Leave empty for demo mode (data stays in this browser tab; host can add simulated students).
   SUPABASE_URL: "https://uyynxszpmtwfxmnwirjn.supabase.co",
   SUPABASE_ANON_KEY: "sb_publishable_urtblTmp0Y9ikKCBm-Forg_azXo9iQ6",
@@ -103,7 +103,7 @@ const num = (x, d = 2) => isFinite(x) ? x.toFixed(d) : "n/a";
 const mem = {};
 const store = {
   hdr(extra) { return Object.assign({ apikey: CFG.SUPABASE_ANON_KEY, Authorization: "Bearer " + CFG.SUPABASE_ANON_KEY, "Content-Type": "application/json" }, extra || {}); },
-  base() { return CFG.SUPABASE_URL.replace(/\/$/, "") + "/rest/v1"; },
+  base() { return CFG.SUPABASE_URL.replace(/\/$/, "").replace(/\/rest\/v1$/, "") + "/rest/v1"; },
   async upsert(id, data) {
     if (DEMO) { mem[id] = Object.assign({}, data); return; }
     const r = await fetch(this.base() + "/responses?on_conflict=id", { method: "POST", headers: this.hdr({ Prefer: "resolution=merge-duplicates,return=minimal" }), body: JSON.stringify({ id, session: SESSION, data, updated_at: new Date().toISOString() }) });
@@ -115,9 +115,9 @@ const store = {
     if (!r.ok) throw new Error("read failed " + r.status);
     return (await r.json()).map(x => x.data);
   },
-  async clear(key) {
+  async clear() {
     if (DEMO) { Object.keys(mem).forEach(k => delete mem[k]); return true; }
-    const r = await fetch(this.base() + "/rpc/reset_session", { method: "POST", headers: this.hdr(), body: JSON.stringify({ p_session: SESSION, p_key: key }) });
+    const r = await fetch(this.base() + "/responses?session=eq." + encodeURIComponent(SESSION), { method: "DELETE", headers: this.hdr({ Prefer: "return=minimal" }) });
     return r.ok;
   }
 };
@@ -452,11 +452,9 @@ function renderResultsPage(host) {
     const rs = document.getElementById("reset"); let armed = false;
     rs.onclick = async () => {
       if (!armed) { armed = true; rs.textContent = "Click again to delete all answers"; setTimeout(() => { armed = false; rs.textContent = "Reset session"; }, 4000); return; }
-      const key = DEMO ? "" : prompt("Reset key (set in supabase.sql)");
       armed = false; rs.textContent = "Reset session";
-      if (key === null) return;
-      const ok = await store.clear(key);
-      document.getElementById("hostmsg").textContent = ok ? "Session reset." : "Reset failed: wrong key.";
+      const ok = await store.clear();
+      document.getElementById("hostmsg").textContent = ok ? "Session reset." : "Reset failed. Check the delete policy in supabase.sql.";
       drawResults(host, true);
     };
   } else document.getElementById("back").onclick = () => { clearInterval(timer); renderStudent(); };
