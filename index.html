@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WTP Lab: one energy drink, five ways to measure willingness to pay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{--teal:#00C1D4;--dark:#265D71;--grey:#66747B;--purple:#7300FE;--bg:#F5F8F9;--line:#D9E2E6;--warn:#C2410C}
+*{box-sizing:border-box}
+body{margin:0;font-family:Poppins,system-ui,sans-serif;color:var(--dark);background:var(--bg);line-height:1.5}
+header{background:var(--dark);color:#fff;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+header h1{font-size:17px;margin:0;font-weight:600}
+header .tag{color:var(--teal);font-size:13px}
+main{max-width:980px;margin:0 auto;padding:20px 16px 60px}
+.card{background:#fff;border:1px solid var(--line);border-radius:6px;padding:20px;margin-bottom:16px}
+h2{font-size:22px;margin:0 0 6px;font-weight:600}
+h3{font-size:16px;margin:0 0 6px;font-weight:600}
+p{margin:0 0 10px}
+.muted{color:var(--grey);font-size:14px}
+.q{font-size:18px;font-weight:500;margin:6px 0 14px}
+button{font-family:inherit;font-size:16px;font-weight:500;border:0;border-radius:4px;padding:11px 20px;cursor:pointer;background:var(--teal);color:#06303a}
+button:hover{filter:brightness(.95)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--purple);outline-offset:2px}
+button.sec{background:#fff;border:1px solid var(--dark);color:var(--dark)}
+button.yes{background:var(--dark);color:#fff;min-width:120px}
+button.no{background:#fff;border:2px solid var(--dark);color:var(--dark);min-width:120px}
+button:disabled{opacity:.45;cursor:not-allowed}
+input[type=number],input[type=text]{font-family:inherit;font-size:20px;padding:9px 12px;border:1px solid var(--grey);border-radius:4px;width:150px;color:var(--dark)}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.eur{font-size:20px;color:var(--grey)}
+.progress{height:6px;background:var(--line);border-radius:3px;margin-bottom:16px;overflow:hidden}
+.progress div{height:100%;background:var(--teal);transition:width .3s}
+.err{color:var(--warn);font-size:14px;margin-top:8px;min-height:20px}
+.price{font-size:44px;font-weight:600;color:var(--purple)}
+.product{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+.rule{background:#EAF7F9;border-left:4px solid var(--teal);padding:12px 14px;margin:12px 0;font-size:15px}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.tabs button{background:#fff;border:1px solid var(--line);color:var(--dark);padding:8px 14px;font-size:14px}
+.tabs button.on{background:var(--dark);color:#fff;border-color:var(--dark)}
+.kpis{display:flex;flex-wrap:wrap;gap:12px;margin:10px 0 14px}
+.kpi{border:1px solid var(--line);border-radius:6px;padding:8px 14px;min-width:130px}
+.kpi b{display:block;font-size:22px;color:var(--purple)}
+.kpi span{font-size:12px;color:var(--grey)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line)}
+th{background:var(--dark);color:#fff;font-weight:500}
+.chartbox{position:relative;height:320px}
+.banner{background:#FFF4E5;border:1px solid #F5C77E;color:#7A4B00;padding:10px 14px;border-radius:4px;font-size:14px;margin-bottom:14px}
+.hostbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.hostbar .row button{padding:8px 14px;font-size:14px}
+.note{font-size:13px;color:var(--grey);margin-top:10px}
+.opt{display:block;margin:6px 0}
+.opt input{margin-right:8px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header>
+  <h1>WTP Lab <span class="tag">| willingness to pay, five ways</span></h1>
+  <span class="tag" id="hdr-right"></span>
+</header>
+<main id="app"></main>
+
+<script>
+/* ======================= CONFIG (edit here) ======================= */
+const CFG = {
+  // Supabase project URL and anon (public) key, from Project Settings > API.
+  // Leave empty for demo mode (data stays in this browser tab; host can add simulated students).
+  SUPABASE_URL: "",
+  SUPABASE_ANON_KEY: "",
+  PRODUCT: "Energy drink, 0.5 l can",
+  DESCRIPTION: "A cold 0.5 l can of a well-known energy drink, bought at the kiosk next to the lecture hall. Regular taste, no special edition.",
+  GG_PRICES: [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0],
+  AB_PRICES: [2.0, 2.8],
+  BDM_MIN: 0.5, BDM_MAX: 4.5,
+  VW_GRID_STEP: 0.05
+};
+/* ================================================================== */
+
+const qs = new URLSearchParams(location.search);
+const HOST = qs.get("host") === "true";
+const SESSION = (qs.get("s") || "ppd").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 30) || "ppd";
+const DEMO = !(CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY);
+const app = document.getElementById("app");
+const fmt = x => "\u20AC" + x.toFixed(2);
+const pk = p => "p" + Math.round(p * 100);
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const sum = a => a.reduce((s, x) => s + x, 0);
+const mean = a => a.length ? sum(a) / a.length : NaN;
+const median = a => { if (!a.length) return NaN; const s = a.slice().sort((x, y) => x - y), m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+const sd = a => { if (a.length < 2) return NaN; const m = mean(a); return Math.sqrt(sum(a.map(x => (x - m) ** 2)) / (a.length - 1)); };
+const wilson = (k, n) => { if (!n) return [NaN, NaN]; const z = 1.96, p = k / n, d = 1 + z * z / n, c = (p + z * z / (2 * n)) / d, h = z * Math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d; return [c - h, c + h]; };
+const erf = x => { const s = Math.sign(x); x = Math.abs(x); const t = 1 / (1 + 0.3275911 * x); const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x); return s * y; };
+const normCdf = z => 0.5 * (1 + erf(z / Math.SQRT2));
+const pct = x => isFinite(x) ? Math.round(x * 100) + "%" : "n/a";
+const num = (x, d = 2) => isFinite(x) ? x.toFixed(d) : "n/a";
+
+/* ======================= Storage (Supabase REST) ======================= */
+const mem = {};
+const store = {
+  hdr(extra) { return Object.assign({ apikey: CFG.SUPABASE_ANON_KEY, Authorization: "Bearer " + CFG.SUPABASE_ANON_KEY, "Content-Type": "application/json" }, extra || {}); },
+  base() { return CFG.SUPABASE_URL.replace(/\/$/, "") + "/rest/v1"; },
+  async upsert(id, data) {
+    if (DEMO) { mem[id] = Object.assign({}, data); return; }
+    const r = await fetch(this.base() + "/responses?on_conflict=id", { method: "POST", headers: this.hdr({ Prefer: "resolution=merge-duplicates,return=minimal" }), body: JSON.stringify({ id, session: SESSION, data, updated_at: new Date().toISOString() }) });
+    if (!r.ok) throw new Error("write failed " + r.status);
+  },
+  async all() {
+    if (DEMO) return Object.values(mem);
+    const r = await fetch(this.base() + "/responses?select=data&session=eq." + encodeURIComponent(SESSION), { headers: this.hdr() });
+    if (!r.ok) throw new Error("read failed " + r.status);
+    return (await r.json()).map(x => x.data);
+  },
+  async clear(key) {
+    if (DEMO) { Object.keys(mem).forEach(k => delete mem[k]); return true; }
+    const r = await fetch(this.base() + "/rpc/reset_session", { method: "POST", headers: this.hdr(), body: JSON.stringify({ p_session: SESSION, p_key: key }) });
+    return r.ok;
+  }
+};
+
+/* ======================= Analysis ======================= */
+function ggYes(r, p) { return r.gg && typeof r.gg[pk(p)] === "boolean" ? r.gg[pk(p)] : null; }
+function curveShare(values, p) { return values.length ? values.filter(v => v >= p).length / values.length : NaN; }
+function revMax(shareFn, grid) {
+  let best = { p: NaN, rev: -1 };
+  grid.forEach(p => { const s = shareFn(p); if (isFinite(s) && p * s > best.rev) best = { p, rev: p * s, s }; });
+  return best;
+}
+function range(a, b, s) { const o = []; for (let x = a; x <= b + 1e-9; x += s) o.push(Math.round(x * 1000) / 1000); return o; }
+function cross(f, g, xs) {
+  for (let i = 1; i < xs.length; i++) {
+    const d0 = f(xs[i - 1]) - g(xs[i - 1]), d1 = f(xs[i]) - g(xs[i]);
+    if (d0 === 0) return xs[i - 1];
+    if (d0 * d1 < 0 || d1 === 0) { const t = d0 / (d0 - d1); return xs[i - 1] + t * (xs[i] - xs[i - 1]); }
+  }
+  return null;
+}
+function vwAnalysis(data) {
+  const v = data.filter(r => r.vw && [r.vw.tc, r.vw.ch, r.vw.ex, r.vw.te].every(isFinite));
+  if (!v.length) return null;
+  const n = v.length, top = Math.max(...v.map(r => r.vw.te)) + 0.5;
+  const xs = range(0, Math.ceil(top * 2) / 2, CFG.VW_GRID_STEP);
+  const c = {
+    tc: p => v.filter(r => r.vw.tc >= p).length / n,
+    ch: p => v.filter(r => r.vw.ch >= p).length / n,
+    ex: p => v.filter(r => r.vw.ex <= p).length / n,
+    te: p => v.filter(r => r.vw.te <= p).length / n
+  };
+  c.nch = p => 1 - c.ch(p); c.nex = p => 1 - c.ex(p);
+  return {
+    n, xs, c,
+    PMC: cross(c.tc, c.nch, xs), PME: cross(c.te, c.nex, xs),
+    OPP: cross(c.tc, c.te, xs), IPP: cross(c.ch, c.ex, xs)
+  };
+}
+
+/* ======================= Student flow ======================= */
+const STEPS = ["welcome", "direct", "vw", "gg", "bdm", "ab", "done"];
+const me = { id: uid(), step: 0, data: {}, ggOrder: shuffle(CFG.GG_PRICES), ggIdx: 0, ggAns: {}, abPrice: CFG.AB_PRICES[Math.random() < 0.5 ? 0 : 1], bdmDraw: null };
+let saveErr = false;
+
+async function save(patch) {
+  me.data = Object.assign(me.data, patch);
+  try { await store.upsert(me.id, Object.assign({}, me.data, { t: Date.now() })); saveErr = false; }
+  catch (e) { saveErr = true; }
+}
+function progress() { return `<div class="progress" aria-hidden="true"><div style="width:${Math.round(me.step / (STEPS.length - 1) * 100)}%"></div></div>`; }
+function next() { me.step++; renderStudent(); window.scrollTo(0, 0); }
+function banner() {
+  let b = "";
+  if (DEMO) b += `<div class="banner">Demo mode: no database configured. Answers stay in this browser tab only.</div>`;
+  if (saveErr) b += `<div class="banner">Your answer could not be sent. Check the connection; your next answer will retry.</div>`;
+  return b;
+}
+function canSvg() {
+  return `<svg width="110" height="150" viewBox="0 0 110 150" role="img" aria-label="Energy drink can">
+  <rect x="18" y="14" width="74" height="124" rx="10" fill="#265D71"/><rect x="18" y="52" width="74" height="40" fill="#00C1D4"/>
+  <path d="M60 58 L46 78 H56 L50 90 L68 70 H57 Z" fill="#fff"/><ellipse cx="55" cy="14" rx="37" ry="6" fill="#66747B"/>
+  <rect x="18" y="124" width="74" height="14" rx="6" fill="#1B4352"/></svg>`;
+}
+function productCard() {
+  return `<div class="product">${canSvg()}<div><h3>${CFG.PRODUCT}</h3><p class="muted">${CFG.DESCRIPTION}</p></div></div>`;
+}
+
+function renderStudent() {
+  const s = STEPS[me.step];
+  document.getElementById("hdr-right").textContent = "Session " + SESSION;
+  const view = { welcome: vWelcome, direct: vDirect, vw: vVW, gg: vGG, bdm: vBDM, ab: vAB, done: vDone }[s];
+  app.innerHTML = banner() + progress() + view();
+  bindStudent(s);
+}
+function vWelcome() {
+  return `<div class="card"><h2>How much is it worth to you?</h2>${productCard()}
+  <p>Five short tasks, about 5 minutes. Answer as you would in real life. There are no right answers. Responses are anonymous.</p>
+  <p class="muted">The tasks use different ways to measure willingness to pay (WTP). Afterwards we compare what each method tells us.</p>
+  <button id="start">Start</button></div>`;
+}
+function vDirect() {
+  return `<div class="card"><p class="muted">Task 1 of 5: direct question</p>${productCard()}
+  <p class="q">What is the maximum price you would pay for this drink?</p>
+  <div class="row"><span class="eur">&euro;</span><input id="v" type="number" step="0.05" min="0" max="20" inputmode="decimal" aria-label="Maximum price in euro"><button id="go">Next</button></div>
+  <div class="err" id="err"></div></div>`;
+}
+function vVW() {
+  const f = (id, t) => `<div style="margin-bottom:12px"><label for="${id}"><b>${t}</b></label><br><span class="eur">&euro;</span> <input id="${id}" type="number" step="0.05" min="0" max="20" inputmode="decimal"></div>`;
+  return `<div class="card"><p class="muted">Task 2 of 5: price sensitivity</p>
+  <p class="q">At what price per can would you say the drink is ...</p>
+  ${f("tc", "... so cheap that you would doubt its quality? (too cheap)")}
+  ${f("ch", "... a bargain, a good buy for the money? (cheap)")}
+  ${f("ex", "... getting expensive, but you would still consider buying? (expensive)")}
+  ${f("te", "... so expensive that you would not consider buying it? (too expensive)")}
+  <button id="go">Next</button><div class="err" id="err"></div></div>`;
+}
+function vGG() {
+  const p = me.ggOrder[me.ggIdx];
+  return `<div class="card"><p class="muted">Task 3 of 5: buy or not (${me.ggIdx + 1} of ${me.ggOrder.length})</p>${productCard()}
+  <p class="q">Would you buy one can at this price?</p><div class="price">${fmt(p)}</div>
+  <div class="row" style="margin-top:14px"><button class="yes" data-a="1">Yes, I buy</button><button class="no" data-a="0">No</button></div>
+  <p class="note">Each price is a separate situation. Prices appear in random order.</p></div>`;
+}
+function vBDM() {
+  if (me.bdmDraw !== null && me.data.bdm) {
+    const { bid, draw } = me.data.bdm, buy = bid >= draw;
+    return `<div class="card"><p class="muted">Task 4 of 5: your bid is placed</p>
+    <p class="q">Your bid: ${fmt(bid)}. Random price drawn: ${fmt(draw)}.</p>
+    <div class="rule"><b>${buy ? `You buy the can for ${fmt(draw)}.` : "No purchase: the drawn price is above your bid."}</b><br>
+    ${buy ? `The price you pay is the drawn price, not your bid. Compared with your bid you save ${fmt(bid - draw)}.` : "You neither pay nor receive the can."}</div>
+    <p class="muted">Bidding above your true maximum risks paying more than the can is worth to you. Bidding below risks missing a deal you would have liked. So the best strategy is to bid your true maximum.</p>
+    <p class="note">In this class the purchase is simulated. With real money and a real can, the same rule would apply.</p>
+    <button id="go">Next</button></div>`;
+  }
+  return `<div class="card"><p class="muted">Task 4 of 5: bid</p>${productCard()}
+  <div class="rule"><b>The rule.</b> You state a maximum price (your bid). Then a price is drawn at random between ${fmt(CFG.BDM_MIN)} and ${fmt(CFG.BDM_MAX)}. If your bid is at least the drawn price, you buy the can <b>at the drawn price</b>. If your bid is lower, you buy nothing.</div>
+  <p><b>Check:</b> You bid &euro;3.00. The drawn price is &euro;2.00. What do you pay?</p>
+  <label class="opt"><input type="radio" name="chk" value="2"> &euro;2.00</label>
+  <label class="opt"><input type="radio" name="chk" value="3"> &euro;3.00</label>
+  <label class="opt"><input type="radio" name="chk" value="0"> Nothing</label>
+  <p class="q" style="margin-top:18px">What is your bid?</p>
+  <div class="row"><span class="eur">&euro;</span><input id="v" type="number" step="0.05" min="0" max="20" inputmode="decimal" aria-label="Your bid in euro"><button id="go">Place bid</button></div>
+  <div class="err" id="err"></div></div>`;
+}
+function vAB() {
+  return `<div class="card"><p class="muted">Task 5 of 5: reserve a can</p>${productCard()}
+  <p class="q">A can is available at the kiosk after the break for:</p><div class="price">${fmt(me.abPrice)}</div>
+  <p>Do you reserve one now?</p>
+  <div class="row"><button class="yes" data-a="1">Yes, reserve</button><button class="no" data-a="0">No</button></div>
+  <p class="note">Another student sees a different price. Nobody sees both.</p></div>`;
+}
+function vDone() {
+  const d = me.data, ggMax = CFG.GG_PRICES.filter(p => me.ggAns[pk(p)]).slice(-1)[0];
+  return `<div class="card"><h2>Done. Thank you.</h2>
+  <p>Your answers in one place:</p>
+  <table><tr><th>Method</th><th>Your result</th></tr>
+  <tr><td>Direct question</td><td>max ${fmt(d.direct)}</td></tr>
+  <tr><td>Van Westendorp</td><td>too cheap ${fmt(d.vw.tc)}, cheap ${fmt(d.vw.ch)}, expensive ${fmt(d.vw.ex)}, too expensive ${fmt(d.vw.te)}</td></tr>
+  <tr><td>Gabor-Granger</td><td>${ggMax ? "highest price you accepted: " + fmt(ggMax) : "you accepted no price"}</td></tr>
+  <tr><td>BDM</td><td>bid ${fmt(d.bdm.bid)}, draw ${fmt(d.bdm.draw)}: ${d.bdm.bid >= d.bdm.draw ? "bought at " + fmt(d.bdm.draw) : "no purchase"}</td></tr>
+  <tr><td>Price A/B test</td><td>saw ${fmt(d.ab.price)}: ${d.ab.buy ? "reserved" : "did not reserve"}</td></tr></table>
+  <p style="margin-top:14px">Compare your own numbers across methods. Where do they differ, and why?</p>
+  <button id="show">Show class results</button></div>`;
+}
+function readNum(id) { const el = document.getElementById(id); return parseFloat(String(el.value).replace(",", ".")); }
+function bindStudent(s) {
+  const $ = id => document.getElementById(id), err = m => { $("err").textContent = m; };
+  if (s === "welcome") $("start").onclick = next;
+  if (s === "direct") $("go").onclick = async () => {
+    const v = readNum("v"); if (!isFinite(v) || v < 0 || v > 20) return err("Enter a price between 0 and 20.");
+    await save({ direct: v }); next();
+  };
+  if (s === "vw") $("go").onclick = async () => {
+    const vals = ["tc", "ch", "ex", "te"].map(readNum);
+    if (!vals.every(v => isFinite(v) && v >= 0 && v <= 20)) return err("Fill in all four prices (0 to 20).");
+    if (!(vals[0] <= vals[1] && vals[1] <= vals[2] && vals[2] <= vals[3])) return err("Order check: too cheap \u2264 cheap \u2264 expensive \u2264 too expensive.");
+    await save({ vw: { tc: vals[0], ch: vals[1], ex: vals[2], te: vals[3] } }); next();
+  };
+  if (s === "gg") app.querySelectorAll("button[data-a]").forEach(b => b.onclick = async () => {
+    const p = me.ggOrder[me.ggIdx]; me.ggAns[pk(p)] = b.dataset.a === "1"; me.ggIdx++;
+    if (me.ggIdx >= me.ggOrder.length) { await save({ gg: Object.assign({}, me.ggAns) }); next(); } else renderStudent();
+  });
+  if (s === "bdm") {
+    if (me.bdmDraw !== null) $("go").onclick = next;
+    else $("go").onclick = async () => {
+      const chk = app.querySelector("input[name=chk]:checked");
+      if (!chk) return err("Answer the check question first.");
+      const bid = readNum("v"); if (!isFinite(bid) || bid < 0 || bid > 20) return err("Enter a bid between 0 and 20.");
+      const steps = Math.round((CFG.BDM_MAX - CFG.BDM_MIN) / 0.1);
+      const draw = Math.round((CFG.BDM_MIN + Math.floor(Math.random() * (steps + 1)) * 0.1) * 100) / 100;
+      me.bdmDraw = draw;
+      await save({ bdm: { bid, draw, chk: chk.value === "2" } }); renderStudent();
+    };
+  }
+  if (s === "ab") app.querySelectorAll("button[data-a]").forEach(b => b.onclick = async () => {
+    await save({ ab: { price: me.abPrice, buy: b.dataset.a === "1" } }); next();
+  });
+  if (s === "done") $("show").onclick = () => renderResultsPage(false);
+}
+
+/* ======================= Results ======================= */
+let charts = [], tab = "direct", lastSig = "", timer = null;
+const TABS = [["direct", "Direct"], ["gg", "Gabor-Granger"], ["vw", "Van Westendorp"], ["bdm", "BDM"], ["ab", "Price A/B"], ["cmp", "Compare"]];
+const COL = { teal: "#00C1D4", dark: "#265D71", grey: "#66747B", purple: "#7300FE", warn: "#E4572E" };
+function killCharts() { charts.forEach(c => c.destroy()); charts = []; }
+function mk(id, cfg) { const el = document.getElementById(id); if (!el) return; Chart.defaults.font.family = "Poppins, sans-serif"; charts.push(new Chart(el, cfg)); }
+const axisT = (t) => ({ title: { display: true, text: t, color: COL.grey } });
+function kpis(items) { return `<div class="kpis">${items.map(([v, l]) => `<div class="kpi"><b>${v}</b><span>${l}</span></div>`).join("")}</div>`; }
+function histCounts(vals, lo, hi, step) {
+  const bins = range(lo, hi - step, step), counts = bins.map(() => 0);
+  vals.forEach(v => { let i = Math.floor((v - lo) / step); if (i < 0) i = 0; if (i >= bins.length) i = bins.length - 1; counts[i]++; });
+  return { labels: bins.map(b => b.toFixed(2)), counts };
+}
+
+function resDirect(data) {
+  const v = data.map(r => r.direct).filter(isFinite);
+  if (!v.length) return empty();
+  const h = histCounts(v, 0, 6, 0.5), se = sd(v) / Math.sqrt(v.length);
+  const grid = range(0.5, 6, 0.05), rm = revMax(p => curveShare(v, p), grid);
+  setTimeout(() => mk("c1", { type: "bar", data: { labels: h.labels.map(l => l + "+"), datasets: [{ label: "Students", data: h.counts, backgroundColor: COL.teal }] },
+    options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: axisT("Stated maximum price (EUR, bin start)"), y: { beginAtZero: true, ticks: { precision: 0 }, ...axisT("Students") } } } }));
+  return `<h3>Direct question: distribution of stated maximum prices</h3>
+  ${kpis([[v.length, "answers"], [fmt(mean(v)), "mean WTP"], [fmt(median(v)), "median WTP"], [num(sd(v)), "SD"], [fmt(se), "standard error of the mean"], [fmt(rm.p), "revenue-maximizing price"]])}
+  <div class="chartbox"><canvas id="c1"></canvas></div>
+  <p class="note">The mean has a 95% interval of about ${fmt(mean(v) - 1.96 * se)} to ${fmt(mean(v) + 1.96 * se)}. Typical issues: hypothetical bias, round-number answers, anchoring on known shop prices.</p>`;
+}
+function resGG(data) {
+  const P = CFG.GG_PRICES, full = data.filter(r => r.gg && P.every(p => ggYes(r, p) !== null));
+  if (!full.length) return empty();
+  const shares = P.map(p => full.filter(r => ggYes(r, p)).length / full.length);
+  const revs = P.map((p, i) => p * shares[i]), bi = revs.indexOf(Math.max(...revs));
+  const nonMono = full.filter(r => { let seen = false; for (const p of P) { const y = ggYes(r, p); if (!y) seen = true; else if (seen) return true; } return false; }).length;
+  setTimeout(() => mk("c1", { type: "line", data: { labels: P.map(fmt), datasets: [
+    { label: "Share buying", data: shares.map(s => s * 100), borderColor: COL.dark, backgroundColor: COL.dark, yAxisID: "y", tension: 0 },
+    { label: "Revenue index (price x share)", data: revs.map(r => r * 100), borderColor: COL.purple, backgroundColor: COL.purple, borderDash: [6, 4], yAxisID: "y2", tension: 0 }] },
+    options: { maintainAspectRatio: false, scales: { x: axisT("Price shown"), y: { min: 0, max: 100, ...axisT("Share buying (%)") }, y2: { position: "right", beginAtZero: true, grid: { drawOnChartArea: false }, ...axisT("Revenue per 100 students (EUR)") } } } }));
+  return `<h3>Gabor-Granger: demand curve and revenue curve</h3>
+  ${kpis([[full.length, "complete answer sets"], [fmt(P[bi]), "revenue-maximizing price"], [pct(shares[bi]), "share buying at that price"], [nonMono, "non-monotone respondents"]])}
+  <div class="chartbox"><canvas id="c1"></canvas></div>
+  <p class="note">Each student answered all ${P.length} prices in random order. Non-monotone respondents (yes at a high price, no at a lower one) signal noise or inattention. The price grid limits precision: the optimum is only one of ${P.length} tested prices.</p>`;
+}
+function interpY(a, label, x) {
+  const f = { PMC: a.c.tc, PME: a.c.te, OPP: a.c.tc, IPP: a.c.ch }[label.split(" ")[0]];
+  return f(x) * 100;
+}
+function resVW(data) {
+  const a = vwAnalysis(data);
+  if (!a) return empty();
+  const pts = (f) => a.xs.map(x => ({ x, y: f(x) * 100 }));
+  const ds = (label, f, color, dash) => ({ label, data: pts(f), borderColor: color, backgroundColor: color, borderDash: dash || [], pointRadius: 0, borderWidth: dash ? 1.5 : 2.5, showLine: true });
+  const mkp = (label, x, color) => x == null ? null : { label: label + " " + fmt(x), data: [{ x, y: interpY(a, label, x) }], backgroundColor: color, borderColor: "#fff", pointRadius: 7, showLine: false };
+  const sets = [ds("Too cheap", a.c.tc, COL.teal), ds("Cheap", a.c.ch, COL.dark), ds("Expensive", a.c.ex, COL.purple), ds("Too expensive", a.c.te, COL.warn),
+    ds("Not cheap", a.c.nch, COL.dark, [5, 4]), ds("Not expensive", a.c.nex, COL.purple, [5, 4])];
+  ["PMC", "PME", "OPP", "IPP"].forEach((k, i) => { const m = mkp(k, a[k], ["#000", "#000", COL.warn, COL.grey][i]); if (m) sets.push(m); });
+  setTimeout(() => mk("c1", { type: "scatter", data: { datasets: sets },
+    options: { maintainAspectRatio: false, parsing: false, scales: { x: { type: "linear", ...axisT("Price (EUR)") }, y: { min: 0, max: 100, ...axisT("Cumulative share of respondents (%)") } } } }));
+  const row = (n, k, d) => `<tr><td><b>${n}</b></td><td>${a[k] == null ? "n/a" : fmt(a[k])}</td><td>${d}</td></tr>`;
+  return `<h3>Van Westendorp: acceptable price range</h3>
+  ${kpis([[a.n, "complete answers"], [a.PMC == null || a.PME == null ? "n/a" : fmt(a.PMC) + " to " + fmt(a.PME), "acceptable range (PMC to PME)"], [a.OPP == null ? "n/a" : fmt(a.OPP), "optimal price point (OPP)"], [a.IPP == null ? "n/a" : fmt(a.IPP), "indifference price point (IPP)"]])}
+  <div class="chartbox"><canvas id="c1"></canvas></div>
+  <table style="margin-top:12px"><tr><th>Point</th><th>Price</th><th>Intersection</th></tr>
+  ${row("PMC", "PMC", "too cheap meets not cheap: below this, quality doubts dominate")}
+  ${row("PME", "PME", "too expensive meets not expensive: above this, most refuse")}
+  ${row("OPP", "OPP", "too cheap meets too expensive: fewest people reject the price")}
+  ${row("IPP", "IPP", "cheap meets expensive: as many call it cheap as expensive")}</table>
+  <p class="note">Van Westendorp gives a price range, not individual WTP, a demand curve or a profit-maximizing price. Dashed lines are the complements.</p>`;
+}
+function resBDM(data) {
+  const b = data.filter(r => r.bdm && isFinite(r.bdm.bid)), v = b.map(r => r.bdm.bid);
+  if (!b.length) return empty();
+  const h = histCounts(v, 0, 6, 0.5), buys = b.filter(r => r.bdm.bid >= r.bdm.draw).length, chkOk = b.filter(r => r.bdm.chk).length;
+  const grid = range(0.5, 6, 0.05), rm = revMax(p => curveShare(v, p), grid);
+  setTimeout(() => mk("c1", { type: "bar", data: { labels: h.labels.map(l => l + "+"), datasets: [{ label: "Students", data: h.counts, backgroundColor: COL.purple }] },
+    options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: axisT("Bid (EUR, bin start)"), y: { beginAtZero: true, ticks: { precision: 0 }, ...axisT("Students") } } } }));
+  return `<h3>BDM: distribution of bids with purchase consequence</h3>
+  ${kpis([[b.length, "bids"], [fmt(mean(v)), "mean bid"], [fmt(median(v)), "median bid"], [fmt(rm.p), "revenue-maximizing price"], [buys + " of " + b.length, "bought in the draw"], [pct(chkOk / b.length), "passed the comprehension check"]])}
+  <div class="chartbox"><canvas id="c1"></canvas></div>
+  <p class="note">Truthful bids are optimal because the price paid depends on the draw, not on the bid. If the comprehension check fails often, bids are unreliable. Compare the median bid with the direct question on the Compare tab.</p>`;
+}
+function resAB(data) {
+  const P = CFG.AB_PRICES, g = P.map(p => { const x = data.filter(r => r.ab && r.ab.price === p); return { p, n: x.length, k: x.filter(r => r.ab.buy).length }; });
+  if (!g.some(x => x.n)) return empty();
+  const sh = g.map(x => x.n ? x.k / x.n : NaN);
+  let ztxt = "n/a";
+  if (g[0].n && g[1].n) {
+    const pp = (g[0].k + g[1].k) / (g[0].n + g[1].n), se = Math.sqrt(pp * (1 - pp) * (1 / g[0].n + 1 / g[1].n));
+    if (se > 0) { const z = (sh[0] - sh[1]) / se; ztxt = "z = " + num(z) + ", p = " + num(2 * (1 - normCdf(Math.abs(z))), 3); }
+  }
+  setTimeout(() => mk("c1", { type: "bar", data: { labels: g.map(x => fmt(x.p) + " (n=" + x.n + ")"), datasets: [{ label: "Share reserving (%)", data: sh.map(s => isFinite(s) ? s * 100 : 0), backgroundColor: [COL.teal, COL.dark] }] },
+    options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: axisT("Randomly assigned price"), y: { min: 0, max: 100, ...axisT("Share reserving (%)") } } } }));
+  const rows = g.map(x => { const ci = wilson(x.k, x.n); return `<tr><td>${fmt(x.p)}</td><td>${x.n}</td><td>${x.k}</td><td>${pct(x.n ? x.k / x.n : NaN)}</td><td>${pct(ci[0])} to ${pct(ci[1])}</td><td>${x.n ? fmt(x.p * x.k / x.n) : "n/a"}</td></tr>`; }).join("");
+  return `<h3>Price A/B test: randomized prices, one decision each</h3>
+  ${kpis([[ztxt, "two-proportion test"], [g[0].n + g[1].n, "participants"]])}
+  <div class="chartbox"><canvas id="c1"></canvas></div>
+  <table style="margin-top:12px"><tr><th>Price</th><th>n</th><th>Reserved</th><th>Share</th><th>95% CI (Wilson)</th><th>Revenue per visitor</th></tr>${rows}</table>
+  <p class="note">Random assignment makes the price difference causal. With small groups, the intervals are wide: the test says little about the exact demand slope, and only two prices are tested.</p>`;
+}
+function resCmp(data) {
+  const dv = data.map(r => r.direct).filter(isFinite), bv = data.filter(r => r.bdm).map(r => r.bdm.bid).filter(isFinite);
+  const P = CFG.GG_PRICES, gfull = data.filter(r => r.gg && P.every(p => ggYes(r, p) !== null));
+  if (!dv.length && !bv.length && !gfull.length) return empty();
+  const grid = range(1, 4, 0.25);
+  const line = (label, fn, color, dash) => ({ label, data: grid.map(p => ({ x: p, y: fn(p) * 100 })), borderColor: color, backgroundColor: color, borderDash: dash || [], pointRadius: 2, showLine: true });
+  const sets = [];
+  if (dv.length) sets.push(line("Direct question (stated max)", p => curveShare(dv, p), COL.teal));
+  if (gfull.length) sets.push({ label: "Gabor-Granger (stated yes/no)", data: P.map(p => ({ x: p, y: gfull.filter(r => ggYes(r, p)).length / gfull.length * 100 })), borderColor: COL.dark, backgroundColor: COL.dark, pointRadius: 4, showLine: true });
+  if (bv.length) sets.push(line("BDM (incentive-compatible bid)", p => curveShare(bv, p), COL.purple, [6, 4]));
+  const ab = CFG.AB_PRICES.map(p => { const x = data.filter(r => r.ab && r.ab.price === p); return x.length ? { x: p, y: x.filter(r => r.ab.buy).length / x.length * 100 } : null; }).filter(Boolean);
+  if (ab.length) sets.push({ label: "Price A/B test (reservation)", data: ab, borderColor: COL.warn, backgroundColor: COL.warn, pointStyle: "rectRot", pointRadius: 9, showLine: false });
+  setTimeout(() => mk("c1", { type: "scatter", data: { datasets: sets }, options: { maintainAspectRatio: false, scales: { x: { type: "linear", min: 0.75, max: 4.25, ...axisT("Price (EUR)") }, y: { min: 0, max: 100, ...axisT("Share willing to pay (%)") } } } }));
+  const vw = vwAnalysis(data);
+  const ggRev = P.map(p => p * gfull.filter(r => ggYes(r, p)).length);
+  const m = [
+    ["Direct question", dv.length ? fmt(median(dv)) : "n/a", dv.length ? fmt(revMax(p => curveShare(dv, p), range(0.5, 6, 0.05)).p) : "n/a", "stated, hypothetical"],
+    ["Gabor-Granger", gfull.length ? "see curve" : "n/a", gfull.length ? fmt(P[ggRev.indexOf(Math.max(...ggRev))]) : "n/a", "stated, hypothetical"],
+    ["Van Westendorp", vw && vw.OPP != null ? "OPP " + fmt(vw.OPP) : "n/a", vw && vw.PMC != null && vw.PME != null ? fmt(vw.PMC) + " to " + fmt(vw.PME) : "n/a", "stated range"],
+    ["BDM", bv.length ? fmt(median(bv)) : "n/a", bv.length ? fmt(revMax(p => curveShare(bv, p), range(0.5, 6, 0.05)).p) : "n/a", "revealed, incentive-compatible"],
+    ["Price A/B", ab.length ? ab.map(x => fmt(x.x) + ": " + Math.round(x.y) + "%").join(" / ") : "n/a", "two prices only", "revealed, experimental"]
+  ];
+  return `<h3>All methods on one axis: share willing to pay at each price</h3>
+  <div class="chartbox"><canvas id="c1"></canvas></div>
+  <table style="margin-top:12px"><tr><th>Method</th><th>Median WTP / reading</th><th>Price recommendation</th><th>Evidence type</th></tr>
+  ${m.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td>${r[3]}</td></tr>`).join("")}</table>
+  <p class="note">If the stated curves lie to the right of the BDM and A/B points, that is hypothetical bias at work. Order effects are also possible: all students did the tasks in the same order (direct, Van Westendorp, Gabor-Granger, BDM, A/B), and earlier tasks can anchor later ones.</p>`;
+}
+function empty() { return `<p class="muted">No complete answers yet for this method.</p>`; }
+
+const RES = { direct: resDirect, gg: resGG, vw: resVW, bdm: resBDM, ab: resAB, cmp: resCmp };
+async function drawResults(host, force) {
+  let data = [];
+  try { data = await store.all(); } catch (e) { document.getElementById("res-err").textContent = "Could not load results. Retrying."; return; }
+  document.getElementById("res-err").textContent = "";
+  const sig = tab + "|" + JSON.stringify(data).length + "|" + data.length;
+  document.getElementById("n").textContent = data.length;
+  if (sig === lastSig && !force) return;
+  lastSig = sig; killCharts();
+  document.getElementById("res-body").innerHTML = RES[tab](data);
+}
+function renderResultsPage(host) {
+  document.getElementById("hdr-right").textContent = (host ? "Host view | " : "Class results | ") + "Session " + SESSION;
+  const link = location.origin + location.pathname + "?s=" + SESSION;
+  app.innerHTML = `${DEMO ? `<div class="banner">Demo mode: no database configured. Results only reflect this browser tab.</div>` : ""}
+  <div class="card"><div class="hostbar"><div><b id="n">0</b> students answered so far <span class="muted">(auto-refresh every 4 s)</span></div>
+  <div class="row">${host ? `<button class="sec" id="copy">Show student link</button>${DEMO ? `<button class="sec" id="sim">Add 60 simulated students</button>` : ""}<button class="sec" id="reset">Reset session</button>` : `<button class="sec" id="back">Back to my answers</button>`}</div></div>
+  <div class="err" id="res-err"></div><div class="note" id="hostmsg"></div></div>
+  <div class="card"><div class="tabs" role="tablist">${TABS.map(([k, l]) => `<button role="tab" data-t="${k}" class="${k === tab ? "on" : ""}">${l}</button>`).join("")}</div><div id="res-body"></div></div>`;
+  app.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { tab = b.dataset.t; app.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b)); drawResults(host, true); });
+  if (host) {
+    document.getElementById("copy").onclick = () => { document.getElementById("hostmsg").textContent = "Student link: " + link; };
+    const sim = document.getElementById("sim"); if (sim) sim.onclick = async () => { simulate(60); drawResults(host, true); };
+    const rs = document.getElementById("reset"); let armed = false;
+    rs.onclick = async () => {
+      if (!armed) { armed = true; rs.textContent = "Click again to delete all answers"; setTimeout(() => { armed = false; rs.textContent = "Reset session"; }, 4000); return; }
+      const key = DEMO ? "" : prompt("Reset key (set in supabase.sql)");
+      armed = false; rs.textContent = "Reset session";
+      if (key === null) return;
+      const ok = await store.clear(key);
+      document.getElementById("hostmsg").textContent = ok ? "Session reset." : "Reset failed: wrong key.";
+      drawResults(host, true);
+    };
+  } else document.getElementById("back").onclick = () => { clearInterval(timer); renderStudent(); };
+  clearInterval(timer); lastSig = ""; drawResults(host, true); timer = setInterval(() => drawResults(host, false), 4000);
+}
+
+/* ======================= Simulation (demo mode) ======================= */
+function gauss() { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+function simulate(n) {
+  for (let i = 0; i < n; i++) {
+    const w = Math.max(0.6, Math.exp(Math.log(2.1) + 0.3 * gauss())), r = x => Math.round(x * 20) / 20;
+    const direct = r(Math.max(0.5, w * 1.15 + 0.15 * gauss()));
+    let tc = r(Math.max(0.2, w * 0.45 + 0.1 * gauss())), ch = r(Math.max(tc, w * 0.78 + 0.1 * gauss())), ex = r(Math.max(ch, w * 1.1 + 0.12 * gauss())), te = r(Math.max(ex, w * 1.45 + 0.15 * gauss()));
+    const gg = {}; CFG.GG_PRICES.forEach(p => { gg[pk(p)] = w * 1.1 + 0.2 * gauss() >= p; });
+    const bid = r(Math.max(0, w * 0.97 + 0.18 * gauss())), draw = Math.round((CFG.BDM_MIN + Math.floor(Math.random() * 41) * 0.1) * 100) / 100;
+    const ab = CFG.AB_PRICES[Math.random() < 0.5 ? 0 : 1];
+    mem[uid()] = { t: Date.now(), direct, vw: { tc, ch, ex, te }, gg, bdm: { bid, draw, chk: Math.random() < 0.85 }, ab: { price: ab, buy: w * 1.02 + 0.2 * gauss() >= ab } };
+  }
+}
+
+/* ======================= Boot ======================= */
+if (HOST) renderResultsPage(true); else renderStudent();
+</script>
+</body>
+</html>
