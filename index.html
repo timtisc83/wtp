@@ -28,6 +28,7 @@ button.sec{background:#fff;border:1px solid var(--dark);color:var(--dark)}
 button.yes{background:var(--dark);color:#fff;min-width:120px}
 button.no{background:#fff;border:2px solid var(--dark);color:var(--dark);min-width:120px}
 button:disabled{opacity:.45;cursor:not-allowed}
+select{font-family:inherit;font-size:14px;padding:8px 10px;border:1px solid var(--dark);border-radius:4px;color:var(--dark);background:#fff}
 input[type=number],input[type=text]{font-family:inherit;font-size:20px;padding:9px 12px;border:1px solid var(--grey);border-radius:4px;width:150px;color:var(--dark)}
 .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
 .eur{font-size:20px;color:var(--grey)}
@@ -68,7 +69,7 @@ th{background:var(--dark);color:#fff;font-weight:500}
 /* ======================= CONFIG (edit here) ======================= */
 const CFG = {
   // Supabase project URL (without /rest/v1) and anon (public) key, from Project Settings > API.
-  // Leave empty for demo mode (data stays in this browser tab; host can add simulated students).
+  // Leave empty for demo mode (data stays in this browser tab).
   SUPABASE_URL: "https://uyynxszpmtwfxmnwirjn.supabase.co",
   SUPABASE_ANON_KEY: "sb_publishable_urtblTmp0Y9ikKCBm-Forg_azXo9iQ6",
   PRODUCT: "Energy drink, 0.5 l can",
@@ -109,6 +110,12 @@ const store = {
     const r = await fetch(this.base() + "/responses?on_conflict=id", { method: "POST", headers: this.hdr({ Prefer: "resolution=merge-duplicates,return=minimal" }), body: JSON.stringify({ id, session: SESSION, data, updated_at: new Date().toISOString() }) });
     if (!r.ok) throw new Error("write failed " + r.status);
   },
+  async bulk(rows) {
+    if (DEMO) { rows.forEach(r => { mem[r.id] = Object.assign({}, r.data); }); return; }
+    const body = rows.map(r => ({ id: r.id, session: SESSION, data: r.data, updated_at: new Date().toISOString() }));
+    const r = await fetch(this.base() + "/responses?on_conflict=id", { method: "POST", headers: this.hdr({ Prefer: "resolution=merge-duplicates,return=minimal" }), body: JSON.stringify(body) });
+    if (!r.ok) throw new Error("bulk write failed " + r.status);
+  },
   async all() {
     if (DEMO) return Object.values(mem);
     const r = await fetch(this.base() + "/responses?select=data&session=eq." + encodeURIComponent(SESSION), { headers: this.hdr() });
@@ -118,6 +125,11 @@ const store = {
   async clear() {
     if (DEMO) { Object.keys(mem).forEach(k => delete mem[k]); return true; }
     const r = await fetch(this.base() + "/responses?session=eq." + encodeURIComponent(SESSION), { method: "DELETE", headers: this.hdr({ Prefer: "return=minimal" }) });
+    return r.ok;
+  },
+  async clearSim() {
+    if (DEMO) { Object.keys(mem).forEach(k => { if (k.startsWith("sim-")) delete mem[k]; }); return true; }
+    const r = await fetch(this.base() + "/responses?session=eq." + encodeURIComponent(SESSION) + "&id=like.sim-*", { method: "DELETE", headers: this.hdr({ Prefer: "return=minimal" }) });
     return r.ok;
   }
 };
@@ -433,6 +445,7 @@ async function drawResults(host, force) {
   document.getElementById("res-err").textContent = "";
   const sig = tab + "|" + JSON.stringify(data).length + "|" + data.length;
   document.getElementById("n").textContent = data.length;
+  const simEl = document.getElementById("nsim"); if (simEl) simEl.textContent = data.filter(r => r.sim).length;
   if (sig === lastSig && !force) return;
   lastSig = sig; killCharts();
   document.getElementById("res-body").innerHTML = RES[tab](data);
@@ -441,38 +454,68 @@ function renderResultsPage(host) {
   document.getElementById("hdr-right").textContent = (host ? "Host view | " : "Class results | ") + "Session " + SESSION;
   const link = location.origin + location.pathname + "?s=" + SESSION;
   app.innerHTML = `${DEMO ? `<div class="banner">Demo mode: no database configured. Results only reflect this browser tab.</div>` : ""}
-  <div class="card"><div class="hostbar"><div><b id="n">0</b> students answered so far <span class="muted">(auto-refresh every 4 s)</span></div>
-  <div class="row">${host ? `<button class="sec" id="copy">Show student link</button>${DEMO ? `<button class="sec" id="sim">Add 60 simulated students</button>` : ""}<button class="sec" id="reset">Reset session</button>` : `<button class="sec" id="back">Back to my answers</button>`}</div></div>
+  <div class="card"><div class="hostbar"><div><b id="n">0</b> students answered so far, of which <b id="nsim">0</b> simulated <span class="muted">(auto-refresh every 4 s)</span></div>
+  <div class="row">${host ? `<button class="sec" id="copy">Show student link</button><button class="reset-btn" id="reset">Reset session</button>` : `<button class="sec" id="back">Back to my answers</button>`}</div></div>
+  ${host ? `<div class="row" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
+    <label for="simn" class="muted">Simulate</label>
+    <select id="simn" aria-label="Number of simulated students"><option value="20">20</option><option value="60" selected>60</option><option value="120">120</option></select>
+    <button class="sec" id="sim">Add simulated students</button>
+    <button class="sec" id="simdel">Remove simulated only</button>
+    <span class="muted">Simulated rows are marked and can be removed without touching real answers.</span></div>` : ""}
   <div class="err" id="res-err"></div><div class="note" id="hostmsg"></div></div>
   <div class="card"><div class="tabs" role="tablist">${TABS.map(([k, l]) => `<button role="tab" data-t="${k}" class="${k === tab ? "on" : ""}">${l}</button>`).join("")}</div><div id="res-body"></div></div>`;
   app.querySelectorAll(".tabs button").forEach(b => b.onclick = () => { tab = b.dataset.t; app.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("on", x === b)); drawResults(host, true); });
   if (host) {
-    document.getElementById("copy").onclick = () => { document.getElementById("hostmsg").textContent = "Student link: " + link; };
-    const sim = document.getElementById("sim"); if (sim) sim.onclick = async () => { simulate(60); drawResults(host, true); };
+    const msg = t => { document.getElementById("hostmsg").textContent = t; };
+    document.getElementById("copy").onclick = () => msg("Student link: " + link);
+
+    const simBtn = document.getElementById("sim");
+    simBtn.onclick = async () => {
+      const n = parseInt(document.getElementById("simn").value, 10);
+      simBtn.disabled = true; msg("Adding " + n + " simulated students ...");
+      try {
+        await store.bulk(makeSim(n));
+        msg("Added " + n + " simulated students.");
+      } catch (e) { msg("Could not add simulated students. Check the connection and the policies in supabase.sql."); }
+      simBtn.disabled = false;
+      drawResults(host, true);
+    };
+
+    const delBtn = document.getElementById("simdel");
+    delBtn.onclick = async () => {
+      delBtn.disabled = true; msg("Removing simulated students ...");
+      const ok = await store.clearSim();
+      msg(ok ? "Simulated students removed. Real answers are kept." : "Removal failed. Check the delete policy in supabase.sql.");
+      delBtn.disabled = false;
+      drawResults(host, true);
+    };
+
     const rs = document.getElementById("reset"); let armed = false;
     rs.onclick = async () => {
       if (!armed) { armed = true; rs.textContent = "Click again to delete all answers"; setTimeout(() => { armed = false; rs.textContent = "Reset session"; }, 4000); return; }
       armed = false; rs.textContent = "Reset session";
       const ok = await store.clear();
-      document.getElementById("hostmsg").textContent = ok ? "Session reset." : "Reset failed. Check the delete policy in supabase.sql.";
+      msg(ok ? "Session reset." : "Reset failed. Check the delete policy in supabase.sql.");
       drawResults(host, true);
     };
   } else document.getElementById("back").onclick = () => { clearInterval(timer); renderStudent(); };
   clearInterval(timer); lastSig = ""; drawResults(host, true); timer = setInterval(() => drawResults(host, false), 4000);
 }
 
-/* ======================= Simulation (demo mode) ======================= */
+/* ======================= Simulation (host tool) ======================= */
 function gauss() { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
-function simulate(n) {
+function makeSim(n) {
+  const rows = [], r = x => Math.round(x * 20) / 20;
   for (let i = 0; i < n; i++) {
-    const w = Math.max(0.6, Math.exp(Math.log(2.1) + 0.3 * gauss())), r = x => Math.round(x * 20) / 20;
+    const w = Math.max(0.6, Math.exp(Math.log(2.1) + 0.3 * gauss()));
     const direct = r(Math.max(0.5, w * 1.15 + 0.15 * gauss()));
-    let tc = r(Math.max(0.2, w * 0.45 + 0.1 * gauss())), ch = r(Math.max(tc, w * 0.78 + 0.1 * gauss())), ex = r(Math.max(ch, w * 1.1 + 0.12 * gauss())), te = r(Math.max(ex, w * 1.45 + 0.15 * gauss()));
+    const tc = r(Math.max(0.2, w * 0.45 + 0.1 * gauss())), ch = r(Math.max(tc, w * 0.78 + 0.1 * gauss())), ex = r(Math.max(ch, w * 1.1 + 0.12 * gauss())), te = r(Math.max(ex, w * 1.45 + 0.15 * gauss()));
     const gg = {}; CFG.GG_PRICES.forEach(p => { gg[pk(p)] = w * 1.1 + 0.2 * gauss() >= p; });
     const bid = r(Math.max(0, w * 0.97 + 0.18 * gauss())), draw = Math.round((CFG.BDM_MIN + Math.floor(Math.random() * 41) * 0.1) * 100) / 100;
     const ab = CFG.AB_PRICES[Math.random() < 0.5 ? 0 : 1];
-    mem[uid()] = { t: Date.now(), direct, vw: { tc, ch, ex, te }, gg, bdm: { bid, draw, chk: Math.random() < 0.85 }, ab: { price: ab, buy: w * 1.02 + 0.2 * gauss() >= ab } };
+    rows.push({ id: "sim-" + uid() + "-" + i, data: { sim: true, t: Date.now(), direct, vw: { tc, ch, ex, te }, gg, bdm: { bid, draw, chk: Math.random() < 0.85 }, ab: { price: ab, buy: w * 1.02 + 0.2 * gauss() >= ab } } });
   }
+  return rows;
 }
 
 /* ======================= Boot ======================= */
